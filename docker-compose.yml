@@ -4,5 +4,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: roxwoodbotv3.15
+    container_name: roxwoodbot
     restart: always
+
