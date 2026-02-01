@@ -1319,16 +1319,13 @@ run_summary_message_id = None  # ID du message récapitulatif
 last_processed_date = None  # Date du dernier traitement
 
 def get_week_start():
-    """Retourne le lundi de la semaine en cours (heure France)"""
-    # Utiliser l'heure France pour le reset
-    now = datetime.datetime.now(ZoneInfo("Europe/Paris"))
+    """Retourne le lundi de la semaine en cours"""
+    now = datetime.datetime.now(datetime.timezone.utc)
     # 0 = Monday, 6 = Sunday
     days_since_monday = now.weekday()
     week_start = now - datetime.timedelta(days=days_since_monday)
-    # Mettre à minuit en heure France
-    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-    # Convertir en UTC pour l'API Discord
-    return week_start.astimezone(ZoneInfo("UTC"))
+    # Mettre à minuit
+    return week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
 def parse_sales_from_description(description):
     """Extrait le nom du vendeur et la quantité depuis la description"""
@@ -1441,10 +1438,8 @@ async def check_run_logs():
                     inline=False
                 )
             
-            # Afficher en heure française
-            now_paris = datetime.datetime.now(ZoneInfo('Europe/Paris'))
             summary_embed.set_footer(
-                text=f"Mise à jour: {now_paris.strftime('%d/%m/%Y %H:%M:%S')} | Total: {len(sales_data)} vendeurs"
+                text=f"Mise à jour: {datetime.datetime.now(datetime.timezone.utc).strftime('%d/%m/%Y %H:%M:%S')} | Total: {len(sales_data)} vendeurs"
             )
             
             # Créer ou modifier le message
