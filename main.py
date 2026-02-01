@@ -4,6 +4,7 @@ import datetime
 import asyncio
 import json
 import aiofiles
+import html
 from cryptography.fernet import Fernet
 from discord.ext import commands
 from discord import ui, File
@@ -975,6 +976,8 @@ async def on_ready():
         update_presence.start()
     if not send_ticket_reminder.is_running():
         send_ticket_reminder.start()
+    if not check_run_logs.is_running():
+        check_run_logs.start()
     bot.add_view(TicketButton())
 
 @bot.event
@@ -1309,6 +1312,161 @@ def get_member_grade(member, config):
             return grade_name
     return "Employé"
 
+# Système de récupération des logs de runs
+LOGS_RUN_CHANNEL_ID = 1365033396740559048  # Salon des logs de run
+RUNS_CHANNEL_ID = 1467614639452979412      # Salon pour les messages des runs
+run_summary_message_id = None  # ID du message récapitulatif
+last_processed_date = None  # Date du dernier traitement
+
+def get_week_start():
+    """Retourne le lundi de la semaine en cours"""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # 0 = Monday, 6 = Sunday
+    days_since_monday = now.weekday()
+    week_start = now - datetime.timedelta(days=days_since_monday)
+    # Mettre à minuit
+    return week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+def parse_sales_from_description(description):
+    """Extrait le nom du vendeur et la quantité depuis la description"""
+    try:
+        import re
+        
+        if not description:
+            return None, None
+        
+        seller_name = None
+        quantity = None
+        
+        # Chercher la quantité (nombre avant 'x')
+        # Ex: "Vente de 152x Siège Réparé..."
+        match = re.search(r'(\d+)x', description)
+        if match:
+            quantity = int(match.group(1))
+        
+        # Chercher le vendeur après " par " (avec espaces pour éviter "Réparé")
+        # Ex: "...pour 772$ par Oxy Narck. 1930$..."
+        # IMPORTANT: chercher dans le lowercase mais extraire du ORIGINAL
+        lower_desc = description.lower()
+        if " par " in lower_desc:
+            # Trouver l'index du dernier " par "
+            last_par_index = lower_desc.rfind(" par ")
+            if last_par_index != -1:
+                # Extraire à partir du VRAI texte (pas le lowercase)
+                after_par_original = description[last_par_index + 5:].strip()  # +5 = longueur de " par "
+                # Enlever le point et tout ce qui vient après
+                seller_name = after_par_original.split(".")[0].strip()
+        
+        print(f"[DEBUG] Parse - Description: '{description}' -> Vendeur: '{seller_name}', Quantité: {quantity}")
+        return seller_name, quantity
+    except Exception as e:
+        print(f"Erreur lors du parsing: {e}")
+        return None, None
+
+@tasks.loop(minutes=10)
+async def check_run_logs():
+    """Récupère tous les messages de la semaine en cours et envoie un récapitulatif"""
+    global run_summary_message_id, last_processed_date
+    
+    try:
+        await bot.wait_until_ready()
+        
+        source_channel = bot.get_channel(LOGS_RUN_CHANNEL_ID)
+        destination_channel = bot.get_channel(RUNS_CHANNEL_ID)
+        
+        if not source_channel or not destination_channel:
+            print(f"[DEBUG] Canaux non trouvés")
+            return
+        
+        week_start = get_week_start()
+        print(f"[DEBUG] Récupération des messages depuis: {week_start}")
+        
+        sales_data = {}  # {vendeur: quantité}
+        message_count = 0
+        
+        # Récupérer TOUS les messages de la semaine en cours
+        async for message in source_channel.history(after=week_start):
+            message_count += 1
+            
+            # Traiter chaque embed du message
+            if message.embeds:
+                for embed in message.embeds:
+                    if embed.title == "Vente run" and embed.description:
+                        seller_name, quantity = parse_sales_from_description(embed.description)
+                        
+                        if seller_name and quantity:
+                            # Additionner les ventes
+                            if seller_name in sales_data:
+                                sales_data[seller_name] += quantity
+                            else:
+                                sales_data[seller_name] = quantity
+                            print(f"[DEBUG] Vente enregistrée: {seller_name} -> {quantity}x")
+        
+        print(f"[DEBUG] {message_count} messages traités, {len(sales_data)} vendeurs trouvés")
+        print(f"[DEBUG] Données de vente: {sales_data}")
+        
+        # Créer le message récapitulatif
+        if sales_data:
+            # Trier les vendeurs par quantité décroissante
+            sorted_sales = sorted(sales_data.items(), key=lambda x: x[1], reverse=True)
+            
+            # Discord permet max 25 fields par embed, on limite et on affiche les autres en "Autres"
+            MAX_FIELDS = 25
+            main_vendors = sorted_sales[:MAX_FIELDS]
+            other_vendors = sorted_sales[MAX_FIELDS:]
+            
+            summary_embed = discord.Embed(
+                title="📊 Vente run",
+                description="Retrouvez ci-dessous les ventes de la semaine",
+                color=discord.Color.blue()
+            )
+            
+            # Ajouter les vendeurs principaux
+            for vendor, total_qty in main_vendors:
+                summary_embed.add_field(
+                    name=f"🚚 {vendor}",
+                    value=f"{total_qty}x Siège Réparé",
+                    inline=False
+                )
+            
+            # Si plus de 25 vendeurs, ajouter un champ "Autres"
+            if other_vendors:
+                other_text = ", ".join([f"{v} ({q}x)" for v, q in other_vendors])
+                summary_embed.add_field(
+                    name="📝 Autres vendeurs",
+                    value=other_text if len(other_text) < 1024 else other_text[:1021] + "... **Plus de 25 employés détéctés des erreurs peuvent survenir !**",
+                    inline=False
+                )
+            
+            summary_embed.set_footer(
+                text=f"Mise à jour: {datetime.datetime.now(datetime.timezone.utc).strftime('%d/%m/%Y %H:%M:%S')} | Total: {len(sales_data)} vendeurs"
+            )
+            
+            # Créer ou modifier le message
+            try:
+                if run_summary_message_id:
+                    try:
+                        msg = await destination_channel.fetch_message(run_summary_message_id)
+                        await msg.edit(embed=summary_embed)
+                        print(f"[DEBUG] Message {run_summary_message_id} mis à jour")
+                    except discord.NotFound:
+                        # Le message n'existe plus, en créer un nouveau
+                        new_msg = await destination_channel.send(embed=summary_embed)
+                        run_summary_message_id = new_msg.id
+                        print(f"[DEBUG] Nouveau message créé: {run_summary_message_id}")
+                else:
+                    # Créer un nouveau message
+                    new_msg = await destination_channel.send(embed=summary_embed)
+                    run_summary_message_id = new_msg.id
+                    print(f"[DEBUG] Premier message créé: {run_summary_message_id}")
+            except Exception as e:
+                print(f"Erreur lors de l'envoi du message: {e}")
+        else:
+            print(f"[DEBUG] Aucune vente trouvée pour cette semaine")
+    
+    except Exception as e:
+        print(f"Erreur dans check_run_logs: {e}")
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -1317,7 +1475,6 @@ async def on_message(message):
     config = load_config()
     grade_channel_id = config.get("grade_channel_id")
     info_channel_id = config.get("channel_infoemployees_id")
-
     
     if message.channel.id == grade_channel_id:
         if message.author.bot:
@@ -1854,7 +2011,8 @@ async def testboost(ctx):
     await logs_channel.send(embed=end_boost_embed)
     
     await ctx.send(f"Messages de test envoyés dans {logs_channel.mention}")
-    
+
+
 with open("secret.key", "rb") as key_file:
     key = key_file.read()
 
@@ -1865,6 +2023,5 @@ with open(".env.crypt", "rb") as f:
 
 fernet = Fernet(key)
 decrypted_token = fernet.decrypt(encrypted_token).decode()
-
 
 bot.run(decrypted_token)
