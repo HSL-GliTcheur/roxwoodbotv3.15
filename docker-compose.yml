@@ -6,4 +6,5 @@ services:
       dockerfile: Dockerfile
     container_name: roxwoodbot
     restart: always
-
+    environment:
+     - TZ=Europe/Paris
