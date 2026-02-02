@@ -11,7 +11,7 @@ from discord import ui, File
 from discord.ext import tasks
 from io import StringIO
 from datetime import timezone
-from zoneinfo import ZoneInfo  
+import pytz
 import re
 import cryptography
 import aiohttp
@@ -924,7 +924,7 @@ async def on_message_delete(message):
                   f"**Salon:** {message.channel.mention}\n"
                   f"**Contenu:**\n{message.content}",
         color=discord.Color.red(),
-        timestamp=datetime.datetime.now(datetime.timezone.utc)
+        timestamp=datetime.datetime.now(pytz.timezone('Europe/Paris'))
     )
     
     file = discord.File("22c810830c50bfbf3de0f9f2c3125685.png", filename="logo.png")
@@ -961,7 +961,7 @@ async def on_message_edit(before, after):
                   f"**Nouveau contenu:**\n{after.content}\n\n"
                   f"[Aller au message]({after.jump_url})",
         color=discord.Color.orange(),
-        timestamp=datetime.datetime.now(datetime.timezone.utc)
+        timestamp=datetime.datetime.now(pytz.timezone('Europe/Paris'))
     )
     file = discord.File("22c810830c50bfbf3de0f9f2c3125685.png", filename="logo.png")
     embed.set_thumbnail(url="attachment://logo.png")
@@ -1319,8 +1319,9 @@ run_summary_message_id = None  # ID du message récapitulatif
 last_processed_date = None  # Date du dernier traitement
 
 def get_week_start():
-    """Retourne le lundi de la semaine en cours"""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    """Retourne le lundi de la semaine en cours (heure France)"""
+    france_tz = pytz.timezone('Europe/Paris')
+    now = datetime.datetime.now(france_tz)
     # 0 = Monday, 6 = Sunday
     days_since_monday = now.weekday()
     week_start = now - datetime.timedelta(days=days_since_monday)
@@ -1363,7 +1364,7 @@ def parse_sales_from_description(description):
         print(f"Erreur lors du parsing: {e}")
         return None, None
 
-@tasks.loop(minutes=10)
+@tasks.loop(minutes=1)
 async def check_run_logs():
     """Récupère tous les messages de la semaine en cours et envoie un récapitulatif"""
     global run_summary_message_id, last_processed_date
@@ -1438,8 +1439,11 @@ async def check_run_logs():
                     inline=False
                 )
             
+            # Afficher en heure française
+            france_tz = pytz.timezone('Europe/Paris')
+            now_paris = datetime.datetime.now(france_tz)
             summary_embed.set_footer(
-                text=f"Mise à jour: {datetime.datetime.now(datetime.timezone.utc).strftime('%d/%m/%Y %H:%M:%S')} | Total: {len(sales_data)} vendeurs"
+                text=f"Mise à jour: {now_paris.strftime('%d/%m/%Y %H:%M:%S')} | Total: {len(sales_data)} vendeurs"
             )
             
             # Créer ou modifier le message
