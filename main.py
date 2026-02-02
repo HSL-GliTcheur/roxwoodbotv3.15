@@ -1364,7 +1364,7 @@ def parse_sales_from_description(description):
         print(f"Erreur lors du parsing: {e}")
         return None, None
 
-@tasks.loop(minutes=1)
+@tasks.loop(minutes=10)
 async def check_run_logs():
     """Récupère tous les messages de la semaine en cours et envoie un récapitulatif"""
     global run_summary_message_id, last_processed_date
