@@ -495,8 +495,8 @@ class TicketTypeSelect(ui.Select):
             if ticket_type == "⌛att-cv-":
                 await channel.send(
                     f"Bonjour {self.author.mention},\n\n"
-                    "Si tu souhaites rejoindre RoxWood Luxury Concessionnaire, je te laisse remplir ** [Le CV](https://docs.google.com/forms/d/1OwGJCFQTcfqbq3ajzrHOwsN_nfeo-ct7NVx2LFL-YTU/edit?ts=68f231a6) **"
-                    "et nous envoyer ta candidature.\n\nN'oublie pas d'envoyer ta carte d'identité ainsi que ton permis, N'oublie pas de te renommer sur le serveur Nom & Prénom RP.\n\n*Cordialement*",
+                    "Si tu souhaites rejoindre RoxWood Luxury Concessionnaire, je te laisse "
+                    "nous envoyer ta candidature.\n\nN'oublie pas d'envoyer ta carte d'identité ainsi que ton permis, N'oublie pas de te renommer sur le serveur Nom & Prénom RP.\n\n*Cordialement*",
                     view=CloseButton()
                 )
             elif ticket_type == "plainte":
