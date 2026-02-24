@@ -451,7 +451,7 @@ class TicketTypeSelect(ui.Select):
             discord.SelectOption(label="💼 Recrutement", value="⌛att-cv-", description="Postuler pour rejoindre la société"),
             discord.SelectOption(label="👮 Plainte", value="plainte", description="Déposer une plainte ou signalement sérieux"),
             discord.SelectOption(label="🔔 Autre", value="autre", description="Autre demande"),
-            discord.SelectOption(label="💎 VIP", value="VIP", description="Devenir membre vip"),
+            # discord.SelectOption(label="💎 VIP", value="VIP", description="Devenir membre vip"),
         ]
         super().__init__(placeholder="Sélectionnez la catégorie du ticket", options=options, custom_id="ticket_type")
 
@@ -464,7 +464,7 @@ class TicketTypeSelect(ui.Select):
         channel = interaction.channel
         guild = interaction.guild
 
-        print(f"[DEBUG] Ticket type sélectionné : {ticket_type}")  
+        print(f"Ticket type sélectionné : {ticket_type}")  
 
         new_name = f"{ticket_type}-{self.author.name}".lower().replace(" ", "-")
         try:
@@ -978,6 +978,8 @@ async def on_ready():
         send_ticket_reminder.start()
     if not check_run_logs.is_running():
         check_run_logs.start()
+    if not check_sales_logs.is_running():
+        check_sales_logs.start()
     bot.add_view(TicketButton())
 
 @bot.event
@@ -1318,6 +1320,11 @@ RUNS_CHANNEL_ID = 1467614639452979412      # Salon pour les messages des runs
 run_summary_message_id = None  # ID du message récapitulatif
 last_processed_date = None  # Date du dernier traitement
 
+# Système de récupération des logs de ventes de voitures
+LOGS_SALES_CHANNEL_ID = 1365033158466076734  # Salon des logs de ventes
+SALES_CHANNEL_ID = 1472344424074973215       # Salon pour les messages des ventes
+sales_summary_message_id = None  # ID du message récapitulatif des ventes
+
 def get_week_start():
     """Retourne le lundi de la semaine en cours (heure France)"""
     france_tz = pytz.timezone('Europe/Paris')
@@ -1358,11 +1365,73 @@ def parse_sales_from_description(description):
                 # Enlever le point et tout ce qui vient après
                 seller_name = after_par_original.split(".")[0].strip()
         
-        print(f"[DEBUG] Parse - Description: '{description}' -> Vendeur: '{seller_name}', Quantité: {quantity}")
+        return seller_name, quantity
+    except Exception as e:
+        return None, None
+
+def parse_sales_from_description(description):
+    """Extrait le nom du vendeur et la quantité depuis une description de run"""
+    try:
+        import re
+        
+        if not description:
+            return None, None
+        
+        seller_name = None
+        quantity = None
+        
+        # Chercher la quantité (nombre avant 'x')
+        match = re.search(r'(\d+)x', description)
+        if match:
+            quantity = int(match.group(1))
+        
+        # Chercher le vendeur après " par "
+        lower_desc = description.lower()
+        if " par " in lower_desc:
+            last_par_index = lower_desc.rfind(" par ")
+            if last_par_index != -1:
+                after_par_original = description[last_par_index + 5:].strip()
+                seller_name = after_par_original.split(".")[0].strip()
+        
         return seller_name, quantity
     except Exception as e:
         print(f"Erreur lors du parsing: {e}")
         return None, None
+
+def parse_sales_embed(embed):
+    """Extrait le vendeur depuis l'embed de vente de véhicule"""
+    try:
+        # 1. Vérifier que c'est une vente de véhicule
+        if not embed.description or "a vendu un(e)" not in embed.description:
+            return None
+        
+        # 2. Récupérer le vendeur et les infos depuis les fields
+        seller_name = None
+        job_name = None
+        
+        for field in embed.fields:
+            if field.name == "playerCharacter":
+                seller_name = field.value.strip() if field.value else None
+            elif field.name == "jobName":
+                job_name = field.value.strip() if field.value else None
+        
+        # 3. Valider les données
+        if not job_name or "Concessionnaire" not in job_name:
+            return None
+            
+        if not seller_name:
+            return None
+        
+        # Retourner juste le vendeur (on compte les véhicules)
+        return seller_name
+        
+    except Exception as e:
+        print(f"Erreur d'extraction : {e}")
+        return None
+        
+    except Exception as e:
+        print(f"Erreur d'extraction : {e}")
+        return None, 0, None
 
 @tasks.loop(minutes=10)
 async def check_run_logs():
@@ -1376,17 +1445,16 @@ async def check_run_logs():
         destination_channel = bot.get_channel(RUNS_CHANNEL_ID)
         
         if not source_channel or not destination_channel:
-            print(f"[DEBUG] Canaux non trouvés")
+            print(f"[ERREUR] Canaux non trouvés")
             return
         
         week_start = get_week_start()
-        print(f"[DEBUG] Récupération des messages depuis: {week_start}")
         
         sales_data = {}  # {vendeur: quantité}
         message_count = 0
         
-        # Récupérer TOUS les messages de la semaine en cours
-        async for message in source_channel.history(after=week_start):
+        # AJOUT DE limit=None POUR LES RUNS AUSSI !
+        async for message in source_channel.history(after=week_start, limit=None):
             message_count += 1
             
             # Traiter chaque embed du message
@@ -1401,18 +1469,13 @@ async def check_run_logs():
                                 sales_data[seller_name] += quantity
                             else:
                                 sales_data[seller_name] = quantity
-                            print(f"[DEBUG] Vente enregistrée: {seller_name} -> {quantity}x")
-        
-        print(f"[DEBUG] {message_count} messages traités, {len(sales_data)} vendeurs trouvés")
-        print(f"[DEBUG] Données de vente: {sales_data}")
         
         # Créer le message récapitulatif
         if sales_data:
             # Trier les vendeurs par quantité décroissante
             sorted_sales = sorted(sales_data.items(), key=lambda x: x[1], reverse=True)
             
-            # Discord permet max 25 fields par embed, on limite et on affiche les autres en "Autres"
-            MAX_FIELDS = 25
+            MAX_FIELDS = 24
             main_vendors = sorted_sales[:MAX_FIELDS]
             other_vendors = sorted_sales[MAX_FIELDS:]
             
@@ -1435,7 +1498,7 @@ async def check_run_logs():
                 other_text = ", ".join([f"{v} ({q}x)" for v, q in other_vendors])
                 summary_embed.add_field(
                     name="📝 Autres vendeurs",
-                    value=other_text if len(other_text) < 1024 else other_text[:1021] + "... **Plus de 25 employés détéctés des erreurs peuvent survenir !**",
+                    value=other_text if len(other_text) < 1024 else other_text[:1021] + "...",
                     inline=False
                 )
             
@@ -1452,24 +1515,148 @@ async def check_run_logs():
                     try:
                         msg = await destination_channel.fetch_message(run_summary_message_id)
                         await msg.edit(embed=summary_embed)
-                        print(f"[DEBUG] Message {run_summary_message_id} mis à jour")
                     except discord.NotFound:
-                        # Le message n'existe plus, en créer un nouveau
                         new_msg = await destination_channel.send(embed=summary_embed)
                         run_summary_message_id = new_msg.id
-                        print(f"[DEBUG] Nouveau message créé: {run_summary_message_id}")
                 else:
-                    # Créer un nouveau message
                     new_msg = await destination_channel.send(embed=summary_embed)
                     run_summary_message_id = new_msg.id
-                    print(f"[DEBUG] Premier message créé: {run_summary_message_id}")
             except Exception as e:
                 print(f"Erreur lors de l'envoi du message: {e}")
-        else:
-            print(f"[DEBUG] Aucune vente trouvée pour cette semaine")
-    
+                
     except Exception as e:
         print(f"Erreur dans check_run_logs: {e}")
+
+@tasks.loop(minutes=10)
+async def check_sales_logs():
+    """Récupère tous les messages de ventes de la semaine et compte les véhicules par vendeur"""
+    global sales_summary_message_id
+    
+    try:
+        await bot.wait_until_ready()
+        
+        source_channel = bot.get_channel(LOGS_SALES_CHANNEL_ID)
+        destination_channel = bot.get_channel(SALES_CHANNEL_ID)
+        
+        if not source_channel or not destination_channel:
+            print("[ERREUR] ❌ Canaux introuvables.")
+            return
+            
+        week_start = get_week_start()
+        print(f"[ERREUR] DÉBUT DE L'ANALYSE Depuis: {week_start}")
+        
+        sales_data = {}  # {vendeur: count}
+        message_count = 0
+        ventes_validees = 0
+        seen_plates = set()  # Anti-doublons
+        
+        # Récupérer TOUS les messages de la semaine (multiples embeds par message)
+        async for message in source_channel.history(after=week_start, limit=None):
+            if not message.embeds:
+                continue
+            
+            # Traiter chaque embed du message (peut y en avoir plusieurs)
+            for embed in message.embeds:
+                # Vérifier que c'est un log de vente du concessionnaire
+                if not embed.title or "Concessionnaire" not in embed.title:
+                    continue
+                    
+                if not embed.description or "a vendu un(e)" not in embed.description.lower():
+                    continue
+                
+                # Parser l'embed pour récupérer le vendeur
+                seller_name = parse_sales_embed(embed)
+                
+                if not seller_name:
+                    continue
+                
+                # Chercher la plaque pour éviter les doublons
+                plate = None
+                for field in embed.fields:
+                    if field.name == "vehiclePlate":
+                        plate = field.value.strip() if field.value else None
+                        break
+                
+                # Rejeter les doublons
+                if plate and plate in seen_plates:
+                    continue
+                
+                if plate:
+                    seen_plates.add(plate)
+                
+                # Enregistrer la vente
+                if seller_name in sales_data:
+                    sales_data[seller_name] += 1
+                else:
+                    sales_data[seller_name] = 1
+        
+        # Créer le récapitulatif en UN SEUL EMBED
+        if sales_data:
+            # Trier par nombre de véhicules décroissant
+            sorted_sales = sorted(sales_data.items(), key=lambda x: x[1], reverse=True)
+            
+            # Discord limit: 25 fields max par embed
+            MAX_FIELDS = 25
+            main_vendors = sorted_sales[:MAX_FIELDS]
+            other_vendors = sorted_sales[MAX_FIELDS:]
+            
+            total_vehicles = sum(sales_data.values())
+            
+            summary_embed = discord.Embed(
+                title="🚗 Ventes de Véhicules",
+                description="Retrouvez ci-dessous les ventes de la semaine",
+                color=discord.Color.green()
+            )
+            
+            # Ajouter les vendeurs principaux
+            for vendor, count in main_vendors:
+                summary_embed.add_field(
+                    name=f"{vendor}",
+                    value=f"**{count} véhicule(s)**",
+                    inline=False
+                )
+            
+            # Si plus de 25 vendeurs, ajouter un field "Autres"
+            if other_vendors:
+                other_text = ", ".join([f"{v} ({c})" for v, c in other_vendors])
+                summary_embed.add_field(
+                    name="📝 Autres vendeurs",
+                    value=other_text if len(other_text) < 1024 else other_text[:1021] + "...",
+                    inline=False
+                )
+            
+            # Stats globales
+            summary_embed.add_field(
+                name="📊 Total",
+                value=f"**{total_vehicles}** véhicules | **{len(sales_data)}** vendeur(s)",
+                inline=False
+            )
+            
+            # Timestamp
+            france_tz = pytz.timezone('Europe/Paris')
+            now_paris = datetime.datetime.now(france_tz)
+            summary_embed.set_footer(text=f"Mise à jour: {now_paris.strftime('%d/%m/%Y %H:%M:%S')}")
+            
+            # Créer ou mettre à jour le message
+            try:
+                if sales_summary_message_id:
+                    try:
+                        msg = await destination_channel.fetch_message(sales_summary_message_id)
+                        await msg.edit(embed=summary_embed)
+                        print(f"🚗 [Ventes] Récap mis à jour - {total_vehicles} véhicule(s) - {len(sales_data)} vendeur(s)")
+                    except discord.NotFound:
+                        new_msg = await destination_channel.send(embed=summary_embed)
+                        sales_summary_message_id = new_msg.id
+                        print(f"🚗 [Ventes] Nouveau message créé - {total_vehicles} véhicule(s) - {len(sales_data)} vendeur(s)")
+                else:
+                    new_msg = await destination_channel.send(embed=summary_embed)
+                    sales_summary_message_id = new_msg.id
+                    print(f"🚗 [Ventes] Premier message créé - {total_vehicles} véhicule(s) - {len(sales_data)} vendeur(s)")
+            except Exception as e:
+                pass
+    
+    except Exception as e:
+        pass
 
 @bot.event
 async def on_message(message):
