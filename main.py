@@ -315,10 +315,6 @@ class TicketButton(ui.View):
         ping_role_id = config.get("ping_role_id")
         ping_role = guild.get_role(ping_role_id) if ping_role_id else None
 
-        
-        formateur_role_id = config.get("role_formateur_id")
-        formateur_role = guild.get_role(formateur_role_id) if formateur_role_id else None
-
         existing_channel = discord.utils.get(guild.text_channels, name=f"ticket-{author.name.lower()}")
         if existing_channel:
             await interaction.response.send_message("Tu as déjà un ticket ouvert", ephemeral=True)
@@ -338,16 +334,6 @@ class TicketButton(ui.View):
             if role:
                 overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
-        
-        if formateur_role:
-            overwrites[formateur_role] = discord.PermissionOverwrite(
-                read_messages=True,
-                send_messages=True,
-                attach_files=True,
-                add_reactions=True,
-                manage_messages=True,
-                read_message_history=True
-            )
         hg_role_id = config.get("hg_role_id")
         if hg_role_id:
             hg_role = guild.get_role(hg_role_id)
@@ -371,8 +357,6 @@ class TicketButton(ui.View):
         mention = ""
         if ping_role:
             mention += ping_role.mention
-        if formateur_role:
-            mention += f" {formateur_role.mention}"
 
         await channel.send(
             f"{author.mention} {mention}",
@@ -491,10 +475,34 @@ class TicketTypeSelect(ui.Select):
                 except Exception as e:
                     print(f"❌ Erreur lors du déplacement dans la catégorie : {e}")
 
+        # Ajouter les permissions et ping du formateur pour les tickets de recrutement
+        formateur_role = None
+        if ticket_type == "⌛att-cv-":
+            formateur_role_id = config.get("role_formateur_id")
+            if formateur_role_id:
+                formateur_role = guild.get_role(formateur_role_id)
+                if formateur_role:
+                    # Ajouter les permissions au formateur
+                    overwrites = channel.overwrites
+                    overwrites[formateur_role] = discord.PermissionOverwrite(
+                        read_messages=True,
+                        send_messages=True,
+                        attach_files=True,
+                        add_reactions=True,
+                        manage_messages=True,
+                        read_message_history=True,
+                        embed_links=True
+                    )
+                    await channel.edit(overwrites=overwrites)
+
         try:
             if ticket_type == "⌛att-cv-":
+                formateur_mention = ""
+                if formateur_role:
+                    formateur_mention = f"\n\n{formateur_role.mention}"
+                
                 await channel.send(
-                    f"Bonjour {self.author.mention},\n\n"
+                    f"Bonjour {self.author.mention}{formateur_mention},\n\n"
                     "Si tu souhaites rejoindre RoxWood Luxury Concessionnaire, je te laisse "
                     "nous envoyer ta candidature.\n\nN'oublie pas d'envoyer ta carte d'identité ainsi que ton permis, N'oublie pas de te renommer sur le serveur Nom & Prénom RP.\n\n*Cordialement*",
                     view=CloseButton()
@@ -1124,106 +1132,6 @@ async def on_member_update(before, after):
         if role and role not in before.roles and role in after.roles:
             update_employee(after, config)
             add_employee_id(str(after.id), after.display_name)
-            # category = guild.get_channel(liaison_cat_id)
-            # if category and isinstance(category, discord.CategoryChannel):
-            #     channel_name = f"{after.display_name.lower().replace(' ', '-')}"
-            #     existing = discord.utils.get(category.text_channels, name=channel_name)
-            #     if not existing:
-            #         overwrites = {
-            #             guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            #             after: discord.PermissionOverwrite(
-            #                 read_messages=True,
-            #                 send_messages=True,
-            #                 attach_files=True,
-            #                 add_reactions=True,
-            #                 read_message_history=True
-            #             ),
-            #             guild.me: discord.PermissionOverwrite(
-            #                 read_messages=True,
-            #                 send_messages=True,
-            #                 attach_files=True,
-            #                 add_reactions=True,
-            #                 manage_messages=True,
-            #                 read_message_history=True
-            #             )
-            #         }
-            #         formateur_role_id = config.get("role_formateur_id")
-            #         hg_role_id = config.get("hg_role_id")
-            #         if formateur_role_id:
-            #             formateur_role = guild.get_role(formateur_role_id)
-            #             if formateur_role:
-            #                 overwrites[formateur_role] = discord.PermissionOverwrite(
-            #                     read_messages=True,
-            #                     send_messages=True,
-            #                     attach_files=True,
-            #                     add_reactions=True,
-            #                     manage_messages=True,
-            #                     read_message_history=True
-            #                 )
-            #         if hg_role_id:
-            #             hg_role = guild.get_role(hg_role_id)
-            #             if hg_role:
-            #                 overwrites[hg_role] = discord.PermissionOverwrite(
-            #                     read_messages=True,
-            #                     send_messages=True,
-            #                     attach_files=True,
-            #                     add_reactions=True,
-            #                     manage_messages=True,
-            #                     read_message_history=True
-            #                 )
-            #         special_role = guild.get_role(1325960476039057409)
-            #         if special_role:
-            #             overwrites[special_role] = discord.PermissionOverwrite(
-            #                 read_messages=True,
-            #                 send_messages=True,
-            #                 attach_files=True,
-            #                 add_reactions=True,
-            #                 manage_messages=True,
-            #                 read_message_history=True
-            #             )
-
-            #         channel = await guild.create_text_channel(
-            #             name=f"📁{after.display_name.lower().replace(' ', '-')}",
-            #             category=category,
-            #             overwrites=overwrites,
-            #             reason="Nouveau employé RWL"
-            #         )
-            #         embed = discord.Embed(
-            #             title=" Règlement Employé",
-            #             description=(
-            #                 "**- Respecter vos disponibilités.**\n"
-            #                 "**- Être en tenue de service lorsque vous travaillez (à le mettre dans les vestiaires).**\n"
-            #                 "**- Ne pas être AFK devant les clients. Retirer votre service et mettez vous en haut.**\n"
-            #                 "**- Interdiction de faire du AFK FARM sous peine de sanctions.**\n"
-            #                 "**- Pas de trash envers les clients/les collègues et les hauts gradés.**\n"
-            #                 "**- Ne pas mettre de musique/tv au concessionnaire.**\n"
-            #                 "**- Faire son quota OBLIGATOIRE qui est de 14H00 sinon pas de PAIE.**\n"
-            #                 "**- Être en service minimum 2h00 par JOUR.**\n"
-            #                 "**- Radio obligatoire quand vous êtes en service.**\n"
-            #                 "**- Ne pas prendre + que vous prenez de vos repas/boissons journaliers.**\n"
-            #                 "**- Avoir un vocabulaire correct (évitez de parler HRP ou du style au lieu de dire bonjour vous dites wesh...).**\n"
-            #                 "**- Demander le permis de conduire et la carte identité (CI). Si c'est un véhicule orga demander que la CI mais si c'est personnel vous demandez les 2 documents dont le Permis et la CI. Si il l'a pas le permis pour le cas en personnel vous refusez la vente.**\n"
-            #                 "**- Ne sautez pas sur les clients. Soyez mature chacun son tour et entraidez-vous, on est une EQUIPE !!!**\n"
-            #                 "**- Quand vous êtes absent mettez dans le channel absence (réunion ou autre..).**\n"
-            #                 "**- N'oubliez pas de mettre une annonce que le Concessionnaire est ouvert ou fermé. Bien sûr si vous êtes le dernier en service et que vous devez partir mettez l'annonce fermé.**\n"
-            #                 "**- INTERDICTION DE FAIRE UN VEHICULE ENTREPRISE.**\n\n"
-            #                 "---------------------------------------------\n"
-            #                 "**Recensé auprès de la LSPD/BCSO**\n"
-            #                 "**Casier judiciaire**\n"
-            #                 "**Certificat d'aptitude du travail pour le concessionnaire**"
-            #             ),
-            #             color=discord.Color.blue()
-            #         )
-            #         embed.add_field(
-            #             name="Liens Professionnels",
-            #             value=(
-            #                 "[Compta](https://concessrw.duckdns.org/account/login.php)\n"
-            #             ),
-            #             inline=False
-            #         )
-            #         await channel.send(embed=embed)
-            #         ping_message = f"{after.mention}"
-            #         await channel.send(ping_message)
 
     hg_role_id = config.get("hg_role_id")
     if hg_role_id and liaison_hg_cat_id:
@@ -1318,12 +1226,13 @@ def get_member_grade(member, config):
 LOGS_RUN_CHANNEL_ID = 1365033396740559048  # Salon des logs de run
 RUNS_CHANNEL_ID = 1467614639452979412      # Salon pour les messages des runs
 run_summary_message_id = None  # ID du message récapitulatif
-last_processed_date = None  # Date du dernier traitement
+run_week_start = None  # Semaine actuelle pour les runs
 
 # Système de récupération des logs de ventes de voitures
 LOGS_SALES_CHANNEL_ID = 1365033158466076734  # Salon des logs de ventes
 SALES_CHANNEL_ID = 1472344424074973215       # Salon pour les messages des ventes
 sales_summary_message_id = None  # ID du message récapitulatif des ventes
+sales_week_start = None  # Semaine actuelle pour les ventes
 
 def get_week_start():
     """Retourne le lundi de la semaine en cours (heure France)"""
@@ -1436,7 +1345,7 @@ def parse_sales_embed(embed):
 @tasks.loop(minutes=10)
 async def check_run_logs():
     """Récupère tous les messages de la semaine en cours et envoie un récapitulatif"""
-    global run_summary_message_id, last_processed_date
+    global run_summary_message_id, run_week_start
     
     try:
         await bot.wait_until_ready()
@@ -1449,6 +1358,12 @@ async def check_run_logs():
             return
         
         week_start = get_week_start()
+        
+        # Vérifier si la semaine a changé
+        if run_week_start != week_start:
+            # Nouvelle semaine : réinitialiser le message_id et tracker la semaine
+            run_summary_message_id = None
+            run_week_start = week_start
         
         sales_data = {}  # {vendeur: quantité}
         message_count = 0
@@ -1530,7 +1445,7 @@ async def check_run_logs():
 @tasks.loop(minutes=10)
 async def check_sales_logs():
     """Récupère tous les messages de ventes de la semaine et compte les véhicules par vendeur"""
-    global sales_summary_message_id
+    global sales_summary_message_id, sales_week_start
     
     try:
         await bot.wait_until_ready()
@@ -1543,6 +1458,13 @@ async def check_sales_logs():
             return
             
         week_start = get_week_start()
+        
+        # Vérifier si la semaine a changé
+        if sales_week_start != week_start:
+            # Nouvelle semaine : réinitialiser le message_id et tracker la semaine
+            sales_summary_message_id = None
+            sales_week_start = week_start
+        
         print(f"[ERREUR] DÉBUT DE L'ANALYSE Depuis: {week_start}")
         
         sales_data = {}  # {vendeur: count}
