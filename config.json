@@ -1,7 +1,7 @@
 {
     "category_id": 1297147957988163649,
     "channel_infoemployees_id": 1297142930905104394,
-    "role_formateur_id": 1347312074291679232,
+    "role_formateur_id": 1454986144163827928,
     "grade_channel_id": 1347598325515554887,
     "category_plainte_id": 1347088994302689311,
     "category_autre_id": 1323648383918800966,
@@ -9,12 +9,12 @@
     "rwl_role_id": 1347076272765009964,
     "role_team_ids": [
         1325960476039057409,
-        1347312074291679232
+        1454986144163827928
     ],
     "logs_channel_id": 1323657441233342485,
     "auto_role_id": 1320808684443668500,
     "ping_role_id": 1325960476039057409,
-    "ping_role_id2": 1347312074291679232,
+    "ping_role_id2": 1454986144163827928,
     "ticket_reminder_channel_id": 1297141616028418120,
     "employee_liaison_category_id": 1348003484720431254,
     "liaison_hg_category_id": 1348250397483204649,
